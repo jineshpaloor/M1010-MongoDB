@@ -1,0 +1,423 @@
+Schema
+======
+
+One to One
+-----------
+
+  In mongodb why we want to keep two documents that are related to each other one-to-one in separate collections?
+    * to reduce the working set size of your application.
+    * because the combined size of the documents would be larger than 16MB.
+
+Many to Many Relations
+----------------------
+
+  Query to get list of students of a particular teacher use indexing.
+  
+    db.students.ensureIndex({'teachers':1});
+    db.students.find({'teachers':{$all:[1]}});
+
+Benefits of Embedding
+---------------------
+
+  * Improved Read Performance
+  * One Round trip to the DB
+
+Performance
+===========
+
+Indexing
+--------
+
+  MongoDB support indexing as RDB, which helps to faster data access. But writing will be slow and it will take some disk space as well.
+  Say if we have an index of fields (a,b,c) then
+  if I query a       - index is used
+  if I query b       - index is not used as it is not top level
+  if I query c       - index is not used as it is not top level
+  if I query a,b     - index is  used 
+
+  example: 
+  
+    db.students.ensureIndex({student_id:1, class:-1}) - create index for key 'student' in ascending order and for key 'class' in descending order.
+
+
+Discovering indexes
+-------------------
+
+    db.system.indexes.find()
+    db.students.getIndexes()
+    db.students.dropIndex({'students_id':1}) - delete an index
+
+Multikey Indexes
+----------------
+
+  {tags:['cycling', 'tennis','football'], categories:['sports','hobbies']}
+  db.collectionname.ensureIndex({tags:1})
+
+  limitation: If you have indexes for keys a and b, then you cannot insert list of values for both keys in an insert. (Reason: it will lead to a polynomial explosion.)
+
+  deleting and index:
+  db.collectionname.dropIndex({tags:1})
+
+###creating unique index
+
+  Ensure that a value for a key can appear only once in a document.
+  This can be useful when we need unique values for particular fields such as student_id.
+
+    db.collection.ensureIndex({'tags':1},{unique:true})
+
+  example:
+
+    add a unique index to the collection students on the keys student_id, class_id.
+    db.students.ensureIndex({'student_id':1, 'class_id':1},{'unique':true})
+
+  if you are creating unique index for a key which is having duplicate values, you can use 'dropDups' option.
+
+    db.things.ensureIndex({'thing':1},{unique:true, dropDups:ture})
+
+### Sparse Index
+  
+  Used to create index for a collection where more than one documents missing the index key.
+
+    {a:1, b:1, c:1}
+    {a:2, b:2}
+    {a:3, b:1}
+
+    now create index for c.
+    db.things.ensureIndex({c:1}, {unique:true, sparse:true})
+
+  only documents which have a index key is being indexed.
+
+### Index Creation
+
+  * A mongod instance can only build one background index at a time per database.
+  * Although the database server will continue to take requests, a background index creation still blocks the mongo shell that you are using to create the index.
+  * Creating an index in the background takes longer than creating it in the foreground
+
+### Explain
+
+  Explain will give you details of how the query executed.
+
+    db.things.find({a:1}).explain()
+
+  a typical output look like this:
+
+    {
+        "cursor" : "BasicCursor",
+        "isMultiKey" : false,
+        "n" : 100000,
+        "nscannedObjects" : 10000000,
+        "nscanned" : 10000000,
+        "nscannedObjectsAllPlans" : 10000000,
+        "nscannedAllPlans" : 10000000,
+        "scanAndOrder" : false,
+        "indexOnly" : false,
+        "nYields" : 7,
+        "nChunkSkips" : 0,
+        "millis" : 5151,
+        "indexBounds" : {
+            
+        },
+        "server" : "Andrews-iMac.local:27017"
+    }
+
+### How large is my index?
+
+  db.students.stats() - gives details about collection
+  db.students.totalIndexSize() - find the size of the index in disk
+
+  it is important to remember that whether our index fit into memory.
+
+### Cardinality of indexes
+
+  * Regular index  - 1:1
+  * Sparse index   - <= documents
+  * Multikey index - > documents
+
+### Hinting index
+
+  We can use ''hint' to tell the command which index to use for query.
+
+    db.students.find({a:1,b:1,c:1}).hint({a:1}) - uses index 'a'
+    db.students.find({a:1,b:1,c:1}).hint({$natural:1}) - dont use any index.
+
+### Efficiency of indexes
+ 
+  using $le, $ne, like negative operators reduce the speed of documents retrieval.
+  regex - use re rather than plain text.
+  use 'hint' for search based on search criteria. 
+
+### Geospatial indexes
+
+    document = {'name':'Rubys',
+                'type':'Barber',
+                'location' : [x,y]
+                }
+    db.space.ensureIndex({"location":'2d', type:1}) - key can be any name, location is not necessary.
+    db.sapce.find({location:{$near: [x,y]}}) - get all documents by increasing distance from [x,y]
+
+  example:
+
+    Suppose you have a 2D geospatial index defined on the key location in the collection places. 
+    Write a query that will find the closest three places (the closest three documents) to the location 74, 140.
+
+    db.places.find({location:{$near:[74,140]}}).limit(3)
+
+### Geo spatial spherical
+
+  instead of find we use runCommand
+
+    db.runCommand({geoNear:'stores', near:[50,50]}, spherical:true, maxDistance:1)
+
+### Profiler
+
+  * level 0 - Profiler off
+  * level 1 - Log slow queries
+  * level 2 - Log all queries
+
+  to run profiler do
+
+    ./mongod --dbpath /usr/local/var/mongodb --profile 1 --slowms 2
+
+  queries will be logged in terminal
+
+  we can query on profile.
+
+    db.profile.find({ns:/test.foo/}).sort({ts:1}).pretty() - sort on timestamp
+    db.profile.find({millis:{$gt:1}}).sort({ts:1}).pretty()
+
+  to do profiling from terminal
+
+    db.getProfilingLevel()
+    db.getProfilingStatus()
+    db.setProfilingLevel(1,4) - level:0 , millis:4
+
+  example:
+
+    Write the query to look in the system profile collection for all queries that 
+    took longer than one second, ordered by timestamp descending.
+
+    db.system.profile.find({millis:{$gt:1000}}).sort({ts:-1})
+
+### Mongotop
+
+  tells where mongo spends its time.
+  run from terminal to know more about the queries you run. eg mongotop 3 (in each 3sec it outputs)
+
+### Mongostat
+
+  queries per second, update per second, flushes per sec etc are displayed.
+
+### Sharding
+
+  Technique of splitting large database among multiple servers.
+  query must include complete shardkey.inorder insert to complete
+  update/remove - broadcast query to all shards.
+
+Aggregation
+===========
+
+  db.products.aggregate([
+    {$group:
+      {
+        _id:"$manufacturer",
+        num_products:{$sum:1}
+      }
+    }
+  ])
+
+
+##Simple Aggregation Example
+
+Write the aggregation query that will find the number of products by category of a collection that has the form:
+
+    {
+        "_id" : ObjectId("50b1aa983b3d0043b51b2c52"),
+        "name" : "Nexus 7",
+        "category" : "Tablets",
+        "manufacturer" : "Google",
+        "price" : 199
+    }
+
+Have the resulting key be called "num_products," as in the video lesson. Hint, you just need to change which key you are aggregating on relative to the examples shown in the lesson.
+Please double quote all keys to make it easier to check your result.
+
+    db.products.aggregate([{$group:{"_id":"$category", "num_products":{"$sum":1}}}])
+
+## Aggregation Pipeline
+
+$project  --> $match --> $group --> $sort --> result
+$project - select out keys and reshape documents 1:1
+$match   - filter n:1
+$group   - aggregation grouping by key n:1
+$sort    - sort 1:1
+$skip    - skips  n:1
+$limit   - limit documents n:1
+$unwind  - unjoins data 
+
+## compound grouping
+
+select manufacturer, category, count(*) from products groupby manufacturer, category
+
+    db.products.aggregate([
+      {$group:
+        {
+          _id:{
+            "manufacturer":"$manufacturer",
+            "category": "$category"},
+          num_products: {$sum:1}
+        }
+      }
+    ])
+
+## Aggregation Expressions
+
+    $sum
+    $avg
+    $min
+    $max
+    $push
+    $addtoSet
+    $first
+    $last
+
+to find sum of prices of products
+
+    db.products.aggregate([
+      {$group:
+        {
+          _id: {
+            "maker":"$manufacturer"
+          },
+          sum_prices:{$sum: "$price"}
+        }
+      }
+    ])
+
+    db.population.aggregate([{$group:{_id:"$state", "population":{$sum:"$pop"}}}])
+
+    use agg
+    db.products.aggregate([
+        {
+            $group:
+            {
+                _id:{
+                    "maker":"$manufacturer"
+                },
+                categories:{$addToSet: "$category"}
+            }
+        }
+    ])
+
+##Using $max and $min
+
+Again thinking about the zip code database, write an aggregation query that will return the population of the postal code in each state with the highest population. It should return output that looks like this:
+
+    {
+                "_id" : "WI",
+                "pop" : 57187
+            },
+            {
+                "_id" : "WV",
+                "pop" : 70185
+            },
+    ..and so on
+
+Once again, the collection is named zips.
+
+    db.zips.aggregate([{"$group":{"_id":"$state","pop":{"$max":"$pop"}}}])
+
+## $project
+
+  * remote keys
+  * add new keys
+  * reshape keys
+  * use some simple functions on keys
+    - $toUpeer
+    - $toLower
+    - $add
+    - $multiple
+
+Changing the document and add the keys maker,details, item
+
+    {$project:
+      {
+        _id:0,
+        'maker': {$toLower: "$manufacturer"},
+        'details':{"category":"$category",
+                   "price":{"$multiply":["$price", 10]},
+                  },
+        'item':'$name'
+      }
+    }
+
+    example: db.zips.aggregate([{$project:{_id:0, city:{$toLower:"$city"}, pop:1, state:1, zip:"$_id"}}])
+
+## $match
+
+filtering the documents
+
+    get all documents which matches state=NY
+    db.zips.aggregate([
+        {$match:
+            {
+                state:"NY"
+            }
+        }
+    ])
+
+    get all documents which matches state=NY and then group by city
+    db.zips.aggregate([
+      {$match:
+        {
+          state:"NY"
+        }
+      },
+      {$group:
+        {
+          _id:"$city",
+          population:{$sum:"$pop"},
+          zip_codes: {$addToSet: "$_id"}
+        }
+      },
+      {$project:
+        {
+          _id:0,
+          city: "$_id",
+          population: "$population",
+          zip_codes:1
+        }
+      }
+    ])
+
+## $sort
+
+sort the earlier query by population in descending order
+
+    db.zips.aggregate([
+      {$match:
+        {
+          state:"NY"
+        }
+      },
+      {$group:
+        {
+          _id:"$city",
+          population:{$sum:"$pop"},
+          zip_codes: {$addToSet: "$_id"}
+        }
+      },
+      {$project:
+        {
+          _id:0,
+          city: "$_id",
+          population: "$population",
+          zip_codes:1
+        }
+      },
+      {
+        $sort:
+          {
+            population: -1
+          }
+      }
+    ])

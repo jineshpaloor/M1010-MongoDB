@@ -26,28 +26,24 @@ def insert_entry(title, post, tags_array, author):
     temp_title = whitespace.sub("_",title)
     permalink = exp.sub('', temp_title)
 
-    post = {"title": title,
+    post = {"title": title, 
             "author": author,
-            "body": post,
-            "permalink":permalink,
-            "tags": tags_array,
+            "body": post, 
+            "permalink":permalink, 
+            "tags": tags_array, 
             "date": datetime.datetime.utcnow()}
 
     try:
-        # XXX HW 3.2 Work here
-        # do something with the post
 
-        print "Inserting the post"
         posts.insert(post)
-
-        # End student work
+        print "Inserting the post"
 
     except:
         print "Error inserting post"
         print "Unexpected error:", sys.exc_info()[0]
 
     return permalink
-
+    
 
 @bottle.route('/')
 def blog_index():
@@ -57,29 +53,49 @@ def blog_index():
 
     username = login_check()  # see if user is logged in
 
-    # XXX HW 3.2 Work Here
-    # Find the last ten most recent posts, sorted from newest to oldest
-
-    cursor = posts.find().sort('date', pymongo.DESCENDING).limit(10)
-
-    # End Student Work
-
-
+    cursor = posts.find().sort('date', direction=-1).limit(10)
     l=[]
-
+    
     for post in cursor:
         post['date'] = post['date'].strftime("%A, %B %d %Y at %I:%M%p") # fix up date
         if ('tags' not in post):
             post['tags'] = [] # fill it in if its not there already
         if ('comments' not in post):
             post['comments'] = []
-
-        l.append({'title':post['title'], 'body':post['body'], 'post_date':post['date'],
-                  'permalink':post['permalink'],
+            
+        l.append({'title':post['title'], 'body':post['body'], 'post_date':post['date'], 
+                  'permalink':post['permalink'], 
                   'tags':post['tags'],
                   'author':post['author'],
                   'comments':post['comments']})
 
+
+    return bottle.template('blog_template', dict(myposts=l,username=username))
+
+@bottle.route('/tag/<tag>')
+def posts_by_tag(tag="notfound"):
+    connection = pymongo.Connection(connection_string, safe=True)
+    db = connection.blog
+    posts = db.posts
+
+    username = login_check()  # see if user is logged in
+
+    tag = cgi.escape(tag)
+    cursor = posts.find({'tags':tag}).sort('date', direction=-1).limit(10)
+    l=[]
+    
+    for post in cursor:
+        post['date'] = post['date'].strftime("%A, %B %d %Y at %I:%M%p") # fix up date
+        if ('tags' not in post):
+            post['tags'] = [] # fill it in if its not there already
+        if ('comments' not in post):
+            post['comments'] = []
+            
+        l.append({'title':post['title'], 'body':post['body'], 'post_date':post['date'], 
+                  'permalink':post['permalink'], 
+                  'tags':post['tags'],
+                  'author':post['author'],
+                  'comments':post['comments']})
 
     return bottle.template('blog_template', dict(myposts=l,username=username))
 
@@ -96,17 +112,13 @@ def show_post(permalink="notfound"):
 
     # determine if its a json request
     path_re = re.compile(r"^([^\.]+).json$")
-
+    
     print "about to query on permalink = ", permalink
-    # XXX HW 3.2 Work here
-    # find a post that has the appropriate permalink
-
     post = posts.find_one({'permalink':permalink})
 
-    # end student work
     if post == None:
         bottle.redirect("/post_not_found")
-
+    
     print "date of entry is ", post['date']
 
     # fix up date
@@ -138,9 +150,7 @@ def post_newcomment():
     username = login_check()  # see if user is logged in
     permalink = cgi.escape(permalink)
 
-    # XXX HW 3.3 - Find the post that matches the permalink.
-    post = posts.find_one({'permalink':permalink})# Replace this line with your work.
-
+    post = posts.find_one({'permalink':permalink})
     # if post not found, redirct to post not found error
     if post == None:
         bottle.redirect("/post_not_found")
@@ -172,15 +182,10 @@ def post_newcomment():
         comment['body'] = body
 
         try:
-            # XXX HW 3.3
-            # Work here.
-            # You will need to update the blog post and add the comment onto the comment array. make sure
-            # you only update one document here by updating the one with the right permalink.
+            last_error = posts.update({'permalink':permalink}, {'$push':{'comments':comment}}, upsert=False, manipulate=False, safe=True)
 
-            # your update here.
             print "about to update a blog post with a comment"
-            posts.update({'permalink':permalink}, {'$push':{'comments':comment}})
-
+            
             #print "num documents updated" + last_error['n']
         except:
             print "Could not update the collection, error"
@@ -192,8 +197,8 @@ def post_newcomment():
 
         bottle.redirect("/post/"+permalink)
 
-
-
+        
+    
 @bottle.get("/post_not_found")
 def post_not_found():
     return "Sorry, post not found"
@@ -205,7 +210,7 @@ def get_newpost():
 
     username = login_check()  # see if user is logged in
     if (username == None):
-        bottle.redirect("/login")
+        bottle.redirect("/login")        
 
     return bottle.template("newpost_template", dict(subject="", body="",errors="", tags="", username=username))
 
@@ -234,8 +239,8 @@ def post_newpost():
 
     username = login_check()  # see if user is logged in
     if (username is None):
-        bottle.redirect("/login")
-
+        bottle.redirect("/login")        
+    
     if (title == "" or post == ""):
         errors="Post must contain a title and blog entry"
         return bottle.template("newpost_template", dict(subject=cgi.escape(title, quote=True), username=username,
@@ -244,16 +249,15 @@ def post_newpost():
     # extract tags
     tags = cgi.escape(tags)
     tags_array = extract_tags(tags)
-
+    
     # looks like a good entry, insert it escaped
     escaped_post = cgi.escape(post, quote=True)
 
     # substitute some <p> for the paragraph breaks
     newline = re.compile('\r?\n')
     formatted_post = newline.sub("<p>",escaped_post)
-
+    
     permalink=insert_entry(title, formatted_post, tags_array, username)
-    print 'inserted post...................................'
 
     # now bottle.redirect to the blog permalink
     bottle.redirect("/post/" + permalink)
@@ -261,17 +265,17 @@ def post_newpost():
 # displays the initial blog signup form
 @bottle.get('/signup')
 def present_signup():
-    return bottle.template("signup",
-                           dict(username="", password="",
-                                password_error="",
+    return bottle.template("signup", 
+                           dict(username="", password="", 
+                                password_error="", 
                                 email="", username_error="", email_error="",
                                 verify_error =""))
 
 # displays the initial blog login form
 @bottle.get('/login')
 def present_login():
-    return bottle.template("login",
-                           dict(username="", password="",
+    return bottle.template("login", 
+                           dict(username="", password="", 
                                 login_error=""))
 
 # handles a login request
@@ -293,16 +297,16 @@ def process_login():
 
         cookie = user.make_secure_val(session_id)
 
-        # Warning, if you are running into a problem whereby the cookie being set here is
-        # not getting set on the redirct, you are probably using the experimental version of bottle (.12).
+        # Warning, if you are running into a problem whereby the cookie being set here is 
+        # not getting set on the redirct, you are probably using the experimental version of bottle (.12). 
         # revert to .11 to solve the problem.
         bottle.response.set_cookie("session", cookie)
-
+        
         bottle.redirect("/welcome")
 
     else:
-        return bottle.template("login",
-                           dict(username=cgi.escape(username), password="",
+        return bottle.template("login", 
+                           dict(username=cgi.escape(username), password="", 
                                 login_error="Invalid Login"))
 
 
@@ -329,7 +333,7 @@ def process_logout():
         if (session_id == None):
             print "no secure session_id"
             bottle.redirect("/signup")
-
+            
         else:
             # remove the session
 
@@ -360,7 +364,7 @@ def process_signup():
             # this was a duplicate
             errors['username_error'] = "Username already in use. Please choose another"
             return bottle.template("signup", errors)
-
+            
         session_id = user.start_session(connection, username)
         print session_id
         cookie= user.make_secure_val(session_id)
@@ -386,7 +390,7 @@ def login_check():
         if (session_id == None):
             print "no secure session_id"
             return None
-
+            
         else:
             # look up username record
             session = user.get_session(connection, session_id)
@@ -396,7 +400,7 @@ def login_check():
     return session['username']
 
 
-
+    
 @bottle.get("/welcome")
 def present_welcome():
     # check for a cookie, if present, then extract value
@@ -406,7 +410,7 @@ def present_welcome():
         print "welcome: can't identify user...redirecting to signup"
         bottle.redirect("/signup")
 
-    return bottle.template("welcome", {'username':username})
+    return bottle.template("welcome", {'username':username})        
 
 
 

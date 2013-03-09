@@ -447,3 +447,32 @@ $unwind
         }
       }
     )
+
+# Application Engineering
+
+  * Durability writes
+  * Availability/Fault tolerance
+  * Scaling
+
+## write concern
+
+    w  j
+    ---------------------
+    0  0   fire and forget
+    1  0   acknowledge
+    1  1   commit to journal as well as wait for acknowledge
+    0  1   commit to journal
+
+question: Provided you assume that the disk is persistent, what are the w and j settings required to guarantee that an insert or update has been written all the way to disk.
+answer: w=1, j=1
+
+## Network Errors
+
+What are the reasons why an application may receive an error back even if the write was successful. Check all that apply.
+
+
+    * The network TCP network connection between the application and the server was reset between the time of the write and the time of the getLastError call.
+
+    * The MongoDB server terminates between the write and the getLastError call.
+
+    * The network fails between the time of the write and the time of the getLastError call
